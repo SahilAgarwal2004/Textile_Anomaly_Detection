@@ -42,7 +42,6 @@ CLUSTERS_PATH = "clusters.pkl"
 
 IMG_HEIGHT      = 128
 IMG_WIDTH       = 128
-THRESHOLD       = 0.0015206437
 PATCH_SIZE      = 64
 PADDING         = 20
 MIN_DEFECT_AREA = 30
@@ -146,7 +145,7 @@ def phase1_outputs(img_bgr):
     mask        = cv2.morphologyEx(mask, cv2.MORPH_OPEN,  kernel)
     mask        = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     flat        = cropped_err.flatten()
-    score       = np.mean(np.sort(flat)[-5:])
+    score       = np.mean(np.sort(flat)[-300:])
     return norm_error, mask, img_norm, score
 
 
@@ -291,10 +290,6 @@ for fabric_type, anomaly_dir in anomaly_folders:
             continue
 
         norm_error, mask, img_norm, score = phase1_outputs(img_bgr)
-
-        if score <= THRESHOLD:
-            folder_skipped += 1
-            continue
 
         patch_emb, patch_viz, geo_dict, geo_array = extract_patch(
             img_norm, norm_error, mask
@@ -494,6 +489,64 @@ for c in range(N_CLUSTERS):
           f"{cluster_geo[:,3].mean():>9.3f}  {type_str}")
 
 # ─────────────────────────────────────────────────────────────
+# STEP 4b: Calibrate anomaly score threshold from good images
+#
+# For every fabric type that has a test/good/ folder, run Phase 1
+# and collect the anomaly score (mean of top-300 cropped errors).
+# The threshold is set as mean + 2*std of those good-image scores,
+# matching the evaluation notebook approach exactly.
+# This replaces the previously hardcoded THRESHOLD constant.
+# ─────────────────────────────────────────────────────────────
+print("Calibrating anomaly score threshold from good images...")
+good_scores = []
+
+# Discover good-image folders independently — scan ALL fabric type directories,
+# not just those that also have anomaly images. This ensures every available
+# good image contributes to the threshold, regardless of whether that fabric
+# type has any anomaly images in the dataset.
+good_folders = []
+for entry in sorted(os.listdir(ITD_ROOT)):
+    good_dir = os.path.join(ITD_ROOT, entry, "test", "good")
+    if os.path.isdir(good_dir):
+        good_files = [f for f in os.listdir(good_dir)
+                      if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+        if good_files:
+            good_folders.append((entry, good_dir, good_files))
+
+if not good_folders:
+    raise RuntimeError(
+        "No test/good/ folders found under ITD/. "
+        "Cannot calibrate anomaly score threshold without good images. "
+        "Check that ITD/<fabric>/test/good/ folders exist and are populated."
+    )
+
+print(f"Found {len(good_folders)} fabric type(s) with good images:")
+for fabric_type, good_dir, good_files in good_folders:
+    print(f"  {fabric_type:15s}  ->  {good_dir}  ({len(good_files)} images)")
+
+for fabric_type, good_dir, good_files in good_folders:
+    for fname in tqdm(good_files, desc=f"  good/{fabric_type}", leave=False):
+        img_bgr = cv2.imread(os.path.join(good_dir, fname))
+        if img_bgr is None:
+            continue
+        _, _, _, score = phase1_outputs(img_bgr)
+        good_scores.append(score)
+
+if len(good_scores) < 10:
+    raise RuntimeError(
+        f"Only {len(good_scores)} good images could be read across all fabric types. "
+        "Need at least 10 to calibrate a reliable threshold."
+    )
+
+good_scores_arr = np.array(good_scores)
+anomaly_score_threshold = float(good_scores_arr.mean() + 2 * good_scores_arr.std())
+print(f"Good-image score  mean : {good_scores_arr.mean():.8f}")
+print(f"Good-image score  std  : {good_scores_arr.std():.8f}")
+print(f"Calibrated anomaly threshold (mean + 2·std): {anomaly_score_threshold:.8f}")
+print(f"Calibrated from {len(good_scores)} good images across "
+      f"{len(set(all_fabric_types))} fabric types.\n")
+
+# ─────────────────────────────────────────────────────────────
 # STEP 5: Save clusters.pkl
 # ─────────────────────────────────────────────────────────────
 CLUSTER_LABEL_MAP = {i: f"Defect Type {i}" for i in range(N_CLUSTERS)}
@@ -513,7 +566,8 @@ cluster_data = {
     "patch_size":         PATCH_SIZE,
     "padding":            PADDING,
     "min_defect_area":    MIN_DEFECT_AREA,
-    "confidence_threshold": calibrated_threshold,
+    "confidence_threshold":      calibrated_threshold,
+    "anomaly_score_threshold":   anomaly_score_threshold,   # adaptive Phase 1 threshold
     "fabric_models":               fabric_models,
     "min_patches_for_fabric_model": MIN_PATCHES_FOR_FABRIC_MODEL,
 }

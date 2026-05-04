@@ -91,9 +91,11 @@ class PatchExtractor:
         # 1. Binarize mask
         binary_mask = self._binarize(mask)
 
-        # 2. Optional morphological closing to merge nearby blobs
+        # 2. Optional morphological opening (removes noise) then closing
+        #    (fills small gaps) — matches Phase 1 mask post-processing in
+        #    build.py and infer.py (MORPH_OPEN then MORPH_CLOSE).
         if self.morph_close_ksize > 0:
-            binary_mask = self._morph_close(binary_mask, self.morph_close_ksize)
+            binary_mask = self._morph_open_close(binary_mask, self.morph_close_ksize)
 
         # 3. Connected component analysis
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
@@ -160,10 +162,13 @@ class PatchExtractor:
         _, binary = cv2.threshold(mask, self.mask_threshold, 255, cv2.THRESH_BINARY)
         return binary
 
-    def _morph_close(self, binary_mask: np.ndarray, ksize: int) -> np.ndarray:
-        """Morphological closing: fills small gaps between nearby blobs."""
+    def _morph_open_close(self, binary_mask: np.ndarray, ksize: int) -> np.ndarray:
+        """Morphological opening (removes small noise blobs) followed by closing
+        (fills small gaps between nearby blobs). Matches the two-step post-
+        processing used in Phase 1 (build.py / infer.py)."""
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
-        return cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+        opened = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN,  kernel)
+        return  cv2.morphologyEx(opened,       cv2.MORPH_CLOSE, kernel)
 
 
 # ─────────────────────────────────────────────
@@ -242,7 +247,6 @@ def demo():
 
     # --- Synthetic data (replace with your real image + mask) ---
     H, W = 128, 128
-    image = cv2.imread("ITD/type2cam2/test/anomaly/8047.png")
 
     # Simulate a fabric texture (slightly noisy blue-gray)
     image = (np.ones((H, W, 3)) * [50, 60, 70]).astype(np.uint8)
