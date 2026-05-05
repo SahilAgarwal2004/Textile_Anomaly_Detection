@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────
+# Textile Anomaly Detection — Requirements
+# ─────────────────────────────────────────────────────────────
+# Install with:
+#   pip install -r requirements.txt
+
+# ── Deep Learning ─────────────────────────────────────────────
+tensorflow>=2.10.0
+
+# ── Computer Vision ───────────────────────────────────────────
+opencv-python>=4.6.0
+
+# ── Machine Learning ──────────────────────────────────────────
+scikit-learn>=1.1.0
+
+# ── Numerical Computing ───────────────────────────────────────
+numpy>=1.23.0
+
+# ── Visualization (build.py + inspect_fabric_clusters.py) ─────
+matplotlib>=3.5.0
+
+# ── Progress Bar (build.py) ───────────────────────────────────
+tqdm>=4.64.0
+
+# ── API Server (app.py) ───────────────────────────────────────
+fastapi>=0.100.0
+uvicorn[standard]>=0.22.0
+python-multipart>=0.0.6
+pydantic>=2.0.0

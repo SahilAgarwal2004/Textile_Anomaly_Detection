@@ -116,11 +116,10 @@ __marimo__/
 
 # Directories
 ITD/
-model/
 old/
 
 # Serialised artefacts
-clusters.pkl
+
 
 # Scripts not tracked in VCS
 infer.py
